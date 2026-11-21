@@ -1,5 +1,5 @@
 name: Tapo Matter Bridge
-version: "1.0.0"
+version: "1.1.0"
 slug: tapo_matter_bridge
 description: Tapo S200B presses and turns in Home Assistant, straight from the Tapo hub over Matter
 url: https://github.com/Schalk-Christiaan/tapo-matter-bridge
@@ -9,3 +9,11 @@ startup: application
 boot: auto
 host_network: true
 homeassistant_api: true
+options:
+  tapo_hub: ""
+  tapo_username: ""
+  tapo_password: ""
+schema:
+  tapo_hub: str
+  tapo_username: str
+  tapo_password: password

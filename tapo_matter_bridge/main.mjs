@@ -1,15 +1,19 @@
 // Tapo Matter Bridge: a Matter light per S200B button that the Tapo hub is bound to.
 // A bound S200B sends Toggle on a press and Step on each turn click; each command
 // becomes a tapo_button_matter event in Home Assistant. Double presses never come
-// over Matter: the hub only records them in its own log.
+// over Matter: the hub only records them in its own log, which this add-on reads
+// over KLAP when the Tapo login is set.
 import { Endpoint, ServerNode, VendorId } from "@matter/main";
 import { DimmableLightDevice } from "@matter/main/devices";
 import { LevelControlServer, OnOffServer } from "@matter/main/behaviors";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
+import { klap } from "./klap.mjs";
 
 const MATTER_WS = process.env.MATTER_WS ?? "ws://127.0.0.1:5580/ws"; // HA's Matter Server add-on
 const HA_EVENT = process.env.HA_EVENT_URL ?? "http://supervisor/core/api/events/tapo_button_matter";
 const STATE = `${process.env.MATTER_STORAGE_PATH ?? "."}/bridge.json`;
+const OPTIONS = process.env.OPTIONS_PATH ?? "/data/options.json"; // add-on settings from HA
 const DIMMER_SWITCH = 260;
 
 const send = (serial, kind, degrees) =>
@@ -117,3 +121,36 @@ for (const b of buttons) {
 }
 matter.close();
 console.log("Ready");
+
+// Double presses: poll each button's trigger log on the hub
+const opt = existsSync(OPTIONS) ? JSON.parse(readFileSync(OPTIONS, "utf8")) : {};
+if (!opt.tapo_hub || !opt.tapo_username || !opt.tapo_password) {
+  console.log("No Tapo hub login in the settings: double presses off");
+} else {
+  for (;;) {
+    try {
+      const req = await klap(opt.tapo_hub, opt.tapo_username, opt.tapo_password);
+      const kids = (await req("get_child_device_list", { start_index: 0 })).child_device_list;
+      const watch = kids.filter(c => endpoints.has(c.mac?.toLowerCase()));
+      const logs = async c => (await req("control_child", {
+        device_id: c.device_id, requestData: { method: "get_trigger_logs", params: { start_id: 0 } },
+      })).responseData.result.logs ?? [];
+      const last = new Map();
+      for (const c of watch) last.set(c.device_id, Math.max(0, ...(await logs(c)).map(e => e.id)));
+      console.log(`Reading double presses from the hub log of ${watch.length} buttons`);
+      for (;;) {
+        for (const c of watch) {
+          // ponytail: only the newest 10 entries; 10+ log entries per button in one poll would drop some
+          const fresh = (await logs(c)).filter(e => e.id > last.get(c.device_id));
+          if (!fresh.length) continue;
+          last.set(c.device_id, Math.max(...fresh.map(e => e.id)));
+          for (const e of fresh) if (e.event === "doubleClick") send(c.mac, "double_press");
+        }
+        await sleep(200);
+      }
+    } catch (e) {
+      console.error("Tapo hub:", e.message, "- retrying in 10 s");
+      await sleep(10_000);
+    }
+  }
+}

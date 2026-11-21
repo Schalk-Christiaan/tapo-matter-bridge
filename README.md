@@ -29,7 +29,7 @@ Restart the add-on after adding a button to the hub.
 | Field | Value |
 |---|---|
 | `serial` | the button's serial (its MAC), e.g. `EC750C8999FB` |
-| `kind` | `single_press`, `rotate_right` or `rotate_left` |
+| `kind` | `single_press`, `double_press`, `rotate_right` or `rotate_left` |
 | `degrees` | turns only: degrees for this click, negative to the left |
 
 ```yaml
@@ -42,6 +42,9 @@ actions:
     target: { entity_id: light.l530_2 }
 ```
 
-## What the S200B doesn't send over Matter
+## Double presses
 
-Double presses. The hub only records them in its own log.
+The S200B doesn't send double presses over Matter; the hub only records them in its own log.
+To get them, fill in the add-on settings: the hub's IP address and your Tapo account login,
+and turn on **Third-Party Compatibility** in the Tapo app (Me → Tapo Lab). The add-on then reads
+the log locally over KLAP, about 1 s after the press. Leave the settings empty to skip it.
