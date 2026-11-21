@@ -49,12 +49,22 @@ async function matterServer(url) {
     pending.delete(m.message_id);
     "error_code" in m ? p.fail(new Error(`${p.command}: ${m.error_code} ${m.details ?? ""}`)) : p.ok(m.result);
   };
+  const once = (command, args) => new Promise((ok, fail) => {
+    const id = String(++n);
+    pending.set(id, { ok, fail, command });
+    ws.send(JSON.stringify({ message_id: id, command, args }));
+  });
   return {
-    call: (command, args = {}) => new Promise((ok, fail) => {
-      const id = String(++n);
-      pending.set(id, { ok, fail, command });
-      ws.send(JSON.stringify({ message_id: id, command, args }));
-    }),
+    // Right after a restart the Matter Server can still hold a dead session to us and time out once
+    call: async (command, args = {}) => {
+      for (let i = 1; ; i++) {
+        try { return await once(command, args); } catch (e) {
+          if (i === 3) throw e;
+          console.error(e.message, "- retrying");
+          await sleep(5000);
+        }
+      }
+    },
     close: () => ws.close(),
   };
 }
